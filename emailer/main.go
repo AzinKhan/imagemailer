@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/smtp"
@@ -45,25 +46,37 @@ type imageChannel chan []byte
 func waitForEmail(eChan imageChannel) {
 	for {
 		data := <-eChan
+		log.Println("Sending email...")
 		err := sendEmail(toAddress, bytes.NewReader(data))
 		if err != nil {
 			log.Printf("Could not send email: %+v", err)
 		}
+		log.Println("...done")
 	}
 }
 
 func HandlePost(imChan imageChannel) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		r.ParseMultipartForm(100000000)
-		file, _, err := r.FormFile("image")
+		log.Println("Received post")
+		err := r.ParseMultipartForm(10000000000)
 		if err != nil {
-			w.WriteHeader(403)
-		} else {
-			defer file.Close()
-			var data []byte
-			file.Read(data)
-			imChan <- data
+			log.Println("Could not read data from file")
 			w.WriteHeader(200)
+		}
+		datas := r.MultipartForm
+		for _, headers := range datas.File {
+			aux, err := headers[0].Open()
+			if err != nil {
+				log.Println(err)
+				break
+			}
+			//name := headers[0].Filename
+			file, err := ioutil.ReadAll(aux)
+			if err != nil {
+				log.Println(err)
+				break
+			}
+			imChan <- file
 		}
 	}
 }
@@ -79,5 +92,6 @@ func main() {
 		Handler: router,
 	}
 	go waitForEmail(emailChan)
+	log.Println("Starting HTTP server..")
 	log.Fatal(server.ListenAndServe())
 }
