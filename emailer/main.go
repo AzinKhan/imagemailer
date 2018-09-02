@@ -4,23 +4,21 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"net/smtp"
 	"time"
 
 	"github.com/gorilla/mux"
-
 	"github.com/jordan-wright/email"
 )
 
 const addr string = "booboophotomailer@gmail.com"
 const passwd string = "booboo123!"
 
-var toAddress string = "azink91@googlemail.com"
-
+var toAddress string
 var serverPort string
 
 func init() {
@@ -28,53 +26,134 @@ func init() {
 	flag.StringVar(&toAddress, "t", toAddress, "Address to send email")
 }
 
-func sendEmail(toAddr string, attachment io.Reader) error {
-	e := email.NewEmail()
-	e.To = []string{toAddr}
-	e.From = addr
-	e.Subject = "Motion detected!"
-	now := fmt.Sprintf("Photo received: %+v", time.Now())
-	e.Text = []byte(now)
-	e.Attach(attachment, fmt.Sprintf("image%+v.jpg", time.Now().Unix()), "image/jpeg")
-	return e.Send("smtp.gmail.com:587", smtp.PlainAuth("", addr, passwd, "smtp.gmail.com"))
+type imageChannel chan attachment
+
+type Emailer struct {
+	attachments []attachment
+	mail        *email.Email
+	imChan      imageChannel
+	passwd      string
 }
 
-type imageChannel chan []byte
+type attachment struct {
+	data     []byte
+	filename string
+	content  string
+}
 
-func waitForEmail(eChan imageChannel) {
+type Creds struct {
+	to       []string
+	from     string
+	password string
+}
+
+func NewEmailer(c Creds) Emailer {
+	var e Emailer
+	e.mail = email.NewEmail()
+	e.mail.From = c.from
+	e.mail.To = c.to
+	e.passwd = c.password
+	return e
+}
+
+func (e *Emailer) Attach() error {
+	for _, a := range e.attachments {
+		_, err := e.mail.Attach(bytes.NewReader(a.data), a.filename, a.content)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *Emailer) Send() error {
+	e.mail.Subject = "Motion detected!"
+	now := fmt.Sprintf("Photo received: %+v", time.Now())
+	e.mail.Text = []byte(now)
+	return e.mail.Send("smtp.gmail.com:587", smtp.PlainAuth("", e.mail.From, e.passwd, "smtp.gmail.com"))
+}
+
+func (e *Emailer) Run() {
 	for {
-		data := <-eChan
-		log.Println("Sending email...")
-		err := sendEmail(toAddress, bytes.NewReader(data))
+		// Either append until memory limit reached or
+		// until timeout
+		t := time.NewTimer(20 * time.Second)
+		size := 0
+	AttachLoop:
+		for {
+			select {
+			case <-t.C:
+				log.Println("Timeout reached, attaching files")
+				break AttachLoop
+			case a := <-e.imChan:
+				log.Println("Collecting attachment")
+				e.attachments = append(e.attachments, a)
+				size += len(a.data)
+				log.Printf("Total size: %+v", size)
+				if size == 20000000 {
+					log.Println("Maximum attachment size reached")
+					break AttachLoop
+				}
+			}
+		}
+
+		err := e.Attach()
+		if err != nil {
+			log.Println("Could not attach file")
+			continue
+		}
+		log.Println("Sending email")
+		err = e.Send()
 		if err != nil {
 			log.Printf("Could not send email: %+v", err)
+			continue
+		} else {
+			log.Println("...done")
 		}
-		log.Println("...done")
+		// Clear attachments
+		e.attachments = []attachment{}
+		log.Println(len(e.attachments))
+		size = 0
 	}
+}
+
+func AssembleFile(h []*multipart.FileHeader) ([]byte, string, error) {
+	aux, err := h[0].Open()
+	if err != nil {
+		return nil, "", err
+	}
+	name := h[0].Filename
+	file, err := ioutil.ReadAll(aux)
+	return file, name, err
+}
+
+func GetForm(r *http.Request) (*multipart.Form, error) {
+	err := r.ParseMultipartForm(10000000000)
+	if err != nil {
+		return nil, err
+	}
+	return r.MultipartForm, nil
 }
 
 func HandlePost(imChan imageChannel) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Println("Received post")
-		err := r.ParseMultipartForm(10000000000)
+		datas, err := GetForm(r)
 		if err != nil {
-			log.Println("Could not read data from file")
-			w.WriteHeader(200)
+			log.Println("Could not get multipart form")
 		}
-		datas := r.MultipartForm
 		for _, headers := range datas.File {
-			aux, err := headers[0].Open()
+			file, name, err := AssembleFile(headers)
 			if err != nil {
-				log.Println(err)
-				break
+				log.Println("Could not construct file from multipart request")
+			} else {
+				newFile := attachment{
+					data:     file,
+					filename: name + ".jpg",
+					content:  "image/jpeg",
+				}
+				imChan <- newFile
 			}
-			//name := headers[0].Filename
-			file, err := ioutil.ReadAll(aux)
-			if err != nil {
-				log.Println(err)
-				break
-			}
-			imChan <- file
 		}
 	}
 }
@@ -89,7 +168,14 @@ func main() {
 		Addr:    address,
 		Handler: router,
 	}
-	go waitForEmail(emailChan)
+	credentials := Creds{
+		to:       []string{"azink91@googlemail.com"},
+		from:     addr,
+		password: passwd,
+	}
+	emailer := NewEmailer(credentials)
+	emailer.imChan = emailChan
+	go emailer.Run()
 	log.Println("Starting HTTP server..")
 	log.Fatal(server.ListenAndServe())
 }
