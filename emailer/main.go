@@ -74,10 +74,10 @@ func (e *Emailer) Send() error {
 }
 
 func (e *Emailer) Run() {
+	t := time.NewTimer(20 * time.Second)
 	for {
 		// Either append until memory limit reached or
 		// until timeout
-		t := time.NewTimer(20 * time.Second)
 		size := 0
 	AttachLoop:
 		for {
@@ -88,12 +88,10 @@ func (e *Emailer) Run() {
 					break AttachLoop
 				} else {
 					log.Println("No images received, resetting timer.")
-					t.Stop()
-					t = time.NewTimer(20 * time.Second)
+					t.Reset(20 * time.Second)
 				}
 			case a := <-e.imChan:
-				t.Stop()
-				t = time.NewTimer(20 * time.Second)
+				t.Reset(20 * time.Second)
 				log.Println("Collecting attachment")
 				e.attachments = append(e.attachments, a)
 				size += len(a.data)
@@ -104,7 +102,6 @@ func (e *Emailer) Run() {
 				}
 			}
 		}
-		t.Stop()
 
 		err := e.Attach()
 		if err != nil {
@@ -122,6 +119,7 @@ func (e *Emailer) Run() {
 		// Clear attachments
 		e.attachments = []attachment{}
 		size = 0
+		t.Reset(20 * time.Second)
 	}
 }
 
