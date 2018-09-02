@@ -68,7 +68,7 @@ func (e *Emailer) Attach() error {
 
 func (e *Emailer) Send() error {
 	e.mail.Subject = "Motion detected!"
-	now := fmt.Sprintf("Photo received: %+v", time.Now())
+	now := fmt.Sprintf("Email sent: %+v", time.Now())
 	e.mail.Text = []byte(now)
 	return e.mail.Send("smtp.gmail.com:587", smtp.PlainAuth("", e.mail.From, e.passwd, "smtp.gmail.com"))
 }
@@ -83,9 +83,17 @@ func (e *Emailer) Run() {
 		for {
 			select {
 			case <-t.C:
-				log.Println("Timeout reached, attaching files")
-				break AttachLoop
+				if size > 0 {
+					log.Printf("Timeout reached, attaching files with total size %v", size)
+					break AttachLoop
+				} else {
+					log.Println("No images received, resetting timer.")
+					t.Stop()
+					t = time.NewTimer(20 * time.Second)
+				}
 			case a := <-e.imChan:
+				t.Stop()
+				t = time.NewTimer(20 * time.Second)
 				log.Println("Collecting attachment")
 				e.attachments = append(e.attachments, a)
 				size += len(a.data)
@@ -96,6 +104,7 @@ func (e *Emailer) Run() {
 				}
 			}
 		}
+		t.Stop()
 
 		err := e.Attach()
 		if err != nil {
@@ -112,7 +121,6 @@ func (e *Emailer) Run() {
 		}
 		// Clear attachments
 		e.attachments = []attachment{}
-		log.Println(len(e.attachments))
 		size = 0
 	}
 }
