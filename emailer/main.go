@@ -96,7 +96,7 @@ func (e *Emailer) Run() {
 				e.attachments = append(e.attachments, a)
 				size += len(a.data)
 				log.Printf("Total size: %+v", size)
-				if size == 20000000 {
+				if size >= 20000000 {
 					log.Println("Maximum attachment size reached")
 					break AttachLoop
 				}
