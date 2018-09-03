@@ -157,7 +157,7 @@ func HandlePost(imChan imageChannel) func(w http.ResponseWriter, r *http.Request
 			} else {
 				newFile := attachment{
 					data:     file,
-					filename: name + ".jpg",
+					filename: name,
 					content:  "image/jpeg",
 				}
 				imChan <- newFile
