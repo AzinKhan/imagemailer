@@ -18,12 +18,23 @@ import (
 const addr string = "booboophotomailer@gmail.com"
 const passwd string = "booboo123!"
 
-var toAddress string
+type addressSlice []string
+
+func (a *addressSlice) Set(value string) error {
+	*a = append(*a, value)
+	return nil
+}
+
+func (a *addressSlice) String() string {
+	return fmt.Sprintf("%s", *a)
+}
+
+var toAddresses addressSlice
 var serverPort string
 
 func init() {
 	flag.StringVar(&serverPort, "p", "8000", "Port for HTTP server")
-	flag.StringVar(&toAddress, "t", toAddress, "Address to send email")
+	flag.Var(&toAddresses, "t", "Addresses to send email")
 }
 
 type imageChannel chan attachment
@@ -164,8 +175,9 @@ func main() {
 		Addr:    address,
 		Handler: router,
 	}
+	log.Printf("Email clients are: %+v", toAddresses)
 	credentials := Creds{
-		to:       []string{"azink91@googlemail.com"},
+		to:       toAddresses,
 		from:     addr,
 		password: passwd,
 	}
