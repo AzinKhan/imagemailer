@@ -2,14 +2,12 @@ package emailer
 
 import (
 	"fmt"
+	"imagemailer/giffer"
 	"io/ioutil"
 	"log"
 	"mime/multipart"
 	"net/http"
 	"net/smtp"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"time"
 
 	"github.com/jordan-wright/email"
@@ -54,12 +52,11 @@ func (e *Emailer) Send() error {
 
 func (e *Emailer) Run() {
 	t := time.NewTimer(20 * time.Second)
-	//var data [][]byte
+	var data [][]byte
 	size := 0
 	// Either append until memory limit reached or
 	// until timeout
 	for {
-		counter := 0
 	AttachLoop:
 		for {
 			select {
@@ -74,48 +71,18 @@ func (e *Emailer) Run() {
 			case a := <-e.ImChan:
 				t.Reset(20 * time.Second)
 				log.Printf("Collecting attachment %+v", a.filename)
-				/*
-						_, err := e.mail.Attach(bytes.NewReader(a.data), a.filename, a.content)
-						if err != nil {
-							log.Printf("Could not attach: %+v", err)
-							continue
-						}
-					data = append(data, a.data)
-					log.Printf("Length of data:\t%+v", len(data))
-				*/
+				data = append(data, a.data)
+				log.Printf("Length of data:\t%+v", len(data))
 				// Write to file
-				filename := fmt.Sprintf("image%d.jpg", counter)
-				err := ioutil.WriteFile(filename, a.data, 0644)
-				if err != nil {
-					log.Println(err)
-				} else {
-					counter++
-				}
 				size += len(a.data)
 				log.Printf("Total size: %+v", size)
-				if size >= 20000000 {
+				if size >= 2000000 {
 					log.Println("Maximum attachment size reached")
 					break AttachLoop
 				}
 			}
 		}
-		/*
-			GIF, err := giffer.Giffer(data)
-			if err != nil {
-				log.Println(err)
-			}
-		*/
-		cmd := exec.Command("ffmpeg", "-i", "image%d.jpg", "video.avi")
-		err := cmd.Run()
-		if err != nil {
-			log.Fatal(err)
-		}
-		cmd2 := exec.Command("ffmpeg", "-i", "video.avi", "out.gif")
-		err = cmd2.Run()
-		if err != nil {
-			log.Fatal(err)
-		}
-		GIF, err := os.Open("out.gif")
+		GIF, err := giffer.Giffer(data)
 		if err != nil {
 			log.Println(err)
 		}
@@ -135,15 +102,7 @@ func (e *Emailer) Run() {
 		e.mail.Attachments = nil
 		log.Printf("%+v attachments remaining", len(e.mail.Attachments))
 		size = 0
-		os.Remove("out.gif")
-		os.Remove("video.avi")
-		files, err := filepath.Glob("./*jpg")
-		if err != nil {
-			log.Println(err)
-		}
-		for _, file := range files {
-			os.Remove(file)
-		}
+		data = nil
 		t.Reset(20 * time.Second)
 	}
 }
