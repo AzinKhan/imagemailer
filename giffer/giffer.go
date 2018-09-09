@@ -3,18 +3,17 @@ package giffer
 import (
 	"bytes"
 	"image"
-	"image/color"
 	"image/gif"
 	"image/jpeg"
 	"log"
 )
 
-func convertPalette(input *image.YCbCr) *image.Paletted {
-	var grey color.Gray
-	paletted := image.NewPaletted(input.Rect, []color.Color{grey})
-	paletted.Pix = input.Y
-	paletted.Stride = input.YStride
-	return paletted
+func decodeJPG(data []byte) (image.Image, error) {
+	img, err := jpeg.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	return img, err
 }
 
 func Giffer(inputData [][]byte) (*bytes.Buffer, error) {
@@ -24,14 +23,26 @@ func Giffer(inputData [][]byte) (*bytes.Buffer, error) {
 		Delay:     make([]int, len(inputData)),
 		Image:     make([]*image.Paletted, len(inputData)),
 	}
+	log.Println("Converting images to GIF")
 	for i, data := range inputData {
-		img, err := jpeg.Decode(bytes.NewReader(data))
+		img, err := decodeJPG(data)
 		if err != nil {
-			log.Println(err)
+			return nil, err
 		}
-		log.Println("Converting image to paletted")
-		G.Image[i] = convertPalette(img.(*image.YCbCr))
-		G.Delay[i] = 3
+		var b []byte
+		bf := bytes.NewBuffer(b)
+		var opt gif.Options
+		opt.NumColors = 256
+		err = gif.Encode(bf, img, &opt)
+		if err != nil {
+			return nil, err
+		}
+		im, err := gif.Decode(bf)
+		if err != nil {
+			return nil, err
+		}
+		G.Image[i] = im.(*image.Paletted)
+		G.Delay[i] = 8
 	}
 	log.Printf("Encoding %+v images into GIF", len(G.Image))
 	var buf []byte
