@@ -2,7 +2,6 @@ package emailer
 
 import (
 	"fmt"
-	"imagemailer/giffer"
 	"io/ioutil"
 	"log"
 	"mime/multipart"
@@ -40,15 +39,15 @@ func init() {
 type ImageChannel chan attachment
 
 type Emailer struct {
-	mail   *email.Email
+	Mail   *email.Email
 	ImChan ImageChannel
 	passwd string
 }
 
 type attachment struct {
-	data     []byte
-	filename string
-	content  string
+	Data     []byte
+	Filename string
+	Content  string
 }
 
 type Creds struct {
@@ -59,76 +58,19 @@ type Creds struct {
 
 func NewEmailer(c Creds) Emailer {
 	var e Emailer
-	e.mail = email.NewEmail()
-	e.mail.From = c.From
-	e.mail.To = c.To
+	e.Mail = email.NewEmail()
+	e.Mail.From = c.From
+	e.Mail.To = c.To
 	e.passwd = c.Password
 	return e
 }
 
 func (e *Emailer) Send() error {
-	log.Printf("Sending email to %+v", e.mail.To)
-	e.mail.Subject = fmt.Sprintf("Motion detected! Time: %+v", time.Now())
+	log.Printf("Sending email to %+v", e.Mail.To)
+	e.Mail.Subject = fmt.Sprintf("Motion detected! Time: %+v", time.Now())
 	now := fmt.Sprintf("Email sent: %+v", time.Now())
-	e.mail.Text = []byte(now)
-	return e.mail.Send("smtp.gmail.com:587", smtp.PlainAuth("", e.mail.From, e.passwd, "smtp.gmail.com"))
-}
-
-func (e *Emailer) Run() {
-	t := time.NewTimer(20 * time.Second)
-	var data [][]byte
-	size := 0
-	// Either append until memory limit reached or
-	// until timeout
-	for {
-	AttachLoop:
-		for {
-			select {
-			case <-t.C:
-				if size > 0 {
-					log.Println("Timeout reached")
-					break AttachLoop
-				} else {
-					log.Println("No images received, resetting timer.")
-					t.Reset(20 * time.Second)
-				}
-			case a := <-e.ImChan:
-				t.Reset(20 * time.Second)
-				log.Printf("Collecting attachment %+v", a.filename)
-				data = append(data, a.data)
-				log.Printf("Length of data:\t%+v", len(data))
-				// Write to file
-				size += len(a.data)
-				log.Printf("Total size: %+v", size)
-				if size >= 2000000 {
-					log.Println("Maximum attachment size reached")
-					break AttachLoop
-				}
-			}
-		}
-		GIF, err := giffer.Giffer(data)
-		if err != nil {
-			log.Println(err)
-		}
-		_, err = e.mail.Attach(GIF, "test.gif", "image/gif")
-		if err != nil {
-			log.Println(err)
-		}
-		log.Printf("Files have total size %v", size)
-		err = e.Send()
-		if err != nil {
-			log.Printf("Could not send email: %+v", err)
-		} else {
-			log.Println("...done")
-		}
-		// Clear attachments
-		log.Printf("Clearing %+v attachments", len(e.mail.Attachments))
-		e.mail.Attachments = nil
-		log.Printf("%+v attachments remaining", len(e.mail.Attachments))
-		size = 0
-		data = nil
-		t.Reset(20 * time.Second)
-	}
+	e.Mail.Text = []byte(now)
+	return e.Mail.Send("smtp.gmail.com:587", smtp.PlainAuth("", e.Mail.From, e.passwd, "smtp.gmail.com"))
 }
 
 func AssembleFile(h []*multipart.FileHeader) ([]byte, string, error) {
@@ -162,9 +104,9 @@ func HandlePost(imChan ImageChannel) func(w http.ResponseWriter, r *http.Request
 				log.Println("Could not construct file from multipart request")
 			} else {
 				newFile := attachment{
-					data:     file,
-					filename: name,
-					content:  "image/jpeg",
+					Data:     file,
+					Filename: name,
+					Content:  "image/jpeg",
 				}
 				imChan <- newFile
 			}
