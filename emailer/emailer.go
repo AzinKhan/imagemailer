@@ -39,9 +39,10 @@ func init() {
 type ImageChannel chan attachment
 
 type Emailer struct {
-	Mail   *email.Email
-	ImChan ImageChannel
-	passwd string
+	Mail     *email.Email
+	ImChan   ImageChannel
+	passwd   string
+	sendFunc func(Sender, *emailConfig) error
 }
 
 type attachment struct {
@@ -56,12 +57,22 @@ type Creds struct {
 	Password string
 }
 
+type Sender interface {
+	Send(string, smtp.Auth) error
+}
+
+type emailConfig struct {
+	address string
+	auth    smtp.Auth
+}
+
 func NewEmailer(c Creds) Emailer {
 	var e Emailer
 	e.Mail = email.NewEmail()
 	e.Mail.From = c.From
 	e.Mail.To = c.To
 	e.passwd = c.Password
+	e.sendFunc = send
 	return e
 }
 
@@ -70,7 +81,17 @@ func (e *Emailer) Send() error {
 	e.Mail.Subject = fmt.Sprintf("Motion detected! Time: %+v", time.Now())
 	now := fmt.Sprintf("Email sent: %+v", time.Now())
 	e.Mail.Text = []byte(now)
-	return e.Mail.Send("smtp.gmail.com:587", smtp.PlainAuth("", e.Mail.From, e.passwd, "smtp.gmail.com"))
+	emailAuth := &emailConfig{
+		address: "smtp.gmail.com:587",
+		auth: smtp.PlainAuth(
+			"", e.Mail.From, e.passwd, "smtp.gmail.com",
+		),
+	}
+	return e.sendFunc(e.Mail, emailAuth)
+}
+
+func send(s Sender, a *emailConfig) error {
+	return s.Send(a.address, a.auth)
 }
 
 func AssembleFile(h []*multipart.FileHeader) ([]byte, string, error) {
