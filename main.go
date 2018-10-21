@@ -52,11 +52,10 @@ func MakeGIFAttachment(data [][]byte) (*Attachment, error) {
 	}
 	a := Attachment{
 		Data:        GIF,
-		Filename:    fmt.Sprintf("%+v.jpg", time.Now()),
+		Filename:    fmt.Sprintf("%+v.gif", time.Now()),
 		ContentType: "image/gif",
 	}
 	return &a, nil
-
 }
 
 func BufferImages(ImChan emailer.ImageChannel, outChan OutputChan) {
@@ -110,6 +109,7 @@ func BufferImages(ImChan emailer.ImageChannel, outChan OutputChan) {
 func Email(outChan OutputChan, creds emailer.Creds) {
 	for {
 		attachment := <-outChan
+		log.Printf("Received file to email %+v", attachment.Filename)
 		e := emailer.NewEmailer(creds)
 		_, err := e.Mail.Attach(attachment.Data, attachment.Filename, attachment.ContentType)
 		if err != nil {
