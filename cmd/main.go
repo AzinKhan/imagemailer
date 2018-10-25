@@ -11,9 +11,6 @@ import (
 	"github.com/gorilla/mux"
 )
 
-var addr string
-var passwd string
-
 type addressSlice []string
 
 func (a *addressSlice) Set(value string) error {
@@ -26,7 +23,7 @@ func (a *addressSlice) String() string {
 }
 
 var toAddresses addressSlice
-var serverPort string
+var addr, passwd, serverPort string
 
 func init() {
 	flag.StringVar(&serverPort, "p", "8000", "Port for HTTP server")
