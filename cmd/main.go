@@ -34,23 +34,28 @@ func init() {
 
 func main() {
 	flag.Parse()
+
 	emailChan := make(emailer.ImageChannel)
 	outByteChan := make(emailer.OutputChan)
-	address := fmt.Sprintf("0.0.0.0:%v", serverPort)
+
 	router := mux.NewRouter()
 	router.HandleFunc("/", emailer.HandlePost(emailChan))
+
 	server := &http.Server{
-		Addr:    address,
+		Addr:    fmt.Sprintf("0.0.0.0:%v", serverPort),
 		Handler: router,
 	}
+
 	log.Printf("Email clients are: %+v", toAddresses)
 	credentials := emailer.Creds{
 		To:       toAddresses,
 		From:     addr,
 		Password: passwd,
 	}
+
 	go emailer.Email(outByteChan, credentials)
 	go emailer.BufferImages(emailChan, outByteChan)
+
 	log.Println("Starting HTTP server..")
 	log.Fatal(server.ListenAndServe())
 }
