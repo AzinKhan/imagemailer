@@ -1,6 +1,7 @@
 package emailer
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -9,6 +10,7 @@ import (
 	"net/smtp"
 	"time"
 
+	"github.com/AzinKhan/giffer"
 	"github.com/jordan-wright/email"
 )
 
@@ -41,6 +43,14 @@ type emailConfig struct {
 	address string
 	auth    smtp.Auth
 }
+
+type Attachment struct {
+	Data        *bytes.Buffer
+	Filename    string
+	ContentType string
+}
+
+type OutputChan chan *Attachment
 
 func NewEmailer(c Creds) Emailer {
 	var e Emailer
@@ -107,6 +117,86 @@ func HandlePost(imChan ImageChannel) func(w http.ResponseWriter, r *http.Request
 				}
 				imChan <- newFile
 			}
+		}
+	}
+}
+
+func MakeGIFAttachment(data [][]byte) (*Attachment, error) {
+	GIF, err := giffer.Giffer(data)
+	if err != nil {
+		return &Attachment{}, err
+	}
+	a := Attachment{
+		Data:        GIF,
+		Filename:    fmt.Sprintf("%+v.gif", time.Now()),
+		ContentType: "image/gif",
+	}
+	return &a, nil
+}
+
+func BufferImages(ImChan ImageChannel, outChan OutputChan) {
+	t := time.NewTimer(20 * time.Second)
+	var data [][]byte
+	size := 0
+	// Either append until memory limit reached or
+	// until timeout
+	for {
+		select {
+		case <-t.C:
+			if size > 0 {
+				log.Println("Timeout reached")
+				GIF, err := MakeGIFAttachment(data)
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+				outChan <- GIF
+				size = 0
+				data = nil
+				t.Reset(20 * time.Second)
+			} else {
+				log.Println("No images received, resetting timer.")
+				t.Reset(20 * time.Second)
+			}
+		case a := <-ImChan:
+			t.Reset(20 * time.Second)
+			log.Printf("Collecting attachment %+v", a.Filename)
+			data = append(data, a.Data)
+			log.Printf("Length of data:\t%+v", len(data))
+			// Write to file
+			size += len(a.Data)
+			log.Printf("Total size: %+v", size)
+			if size >= 2000000 {
+				log.Println("Maximum attachment size reached")
+				GIF, err := MakeGIFAttachment(data)
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+				outChan <- GIF
+				size = 0
+				data = nil
+				t.Reset(20 * time.Second)
+			}
+		}
+	}
+}
+
+func Email(outChan OutputChan, creds Creds) {
+	for {
+		attachment := <-outChan
+		log.Printf("Received file to email %+v", attachment.Filename)
+		e := NewEmailer(creds)
+		_, err := e.Mail.Attach(attachment.Data, attachment.Filename, attachment.ContentType)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		err = e.Send()
+		if err != nil {
+			log.Printf("Could not send email: %+v", err)
+		} else {
+			log.Println("...done")
 		}
 	}
 }
