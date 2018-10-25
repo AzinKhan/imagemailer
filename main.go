@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"giffer"
-	"imagemailer/emailer"
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/AzinKhan/giffer"
+	"github.com/AzinKhan/imagemailer/emailer"
 
 	"github.com/gorilla/mux"
 )
