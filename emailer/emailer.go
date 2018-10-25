@@ -26,7 +26,6 @@ type Emailer struct {
 type attachment struct {
 	Data     []byte
 	Filename string
-	Content  string
 }
 
 type Creds struct {
@@ -113,7 +112,6 @@ func HandlePost(imChan ImageChannel) func(w http.ResponseWriter, r *http.Request
 				newFile := attachment{
 					Data:     file,
 					Filename: name,
-					Content:  "image/jpeg",
 				}
 				imChan <- newFile
 			}

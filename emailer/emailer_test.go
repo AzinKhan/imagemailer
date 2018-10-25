@@ -72,3 +72,44 @@ func TestSend(t *testing.T) {
 		t.Fail()
 	}
 }
+
+type Mocksender struct {
+	resultChan chan *emailConfig
+}
+
+func (m *Mocksender) Send(address string, auth smtp.Auth) error {
+	m.resultChan <- &emailConfig{
+		address: address,
+		auth:    auth,
+	}
+	return nil
+}
+
+func TestUnexportedSendFunction(t *testing.T) {
+	expectedAuth := smtp.PlainAuth(
+		"", from, password, "smtp.gmail.com",
+	)
+	address := "booboo@gmail.com"
+	config := &emailConfig{
+		address: address,
+		auth:    expectedAuth,
+	}
+	resultChan := make(chan *emailConfig)
+	sender := &Mocksender{
+		resultChan: resultChan,
+	}
+
+	go send(sender, config)
+
+	result := <-resultChan
+	if result.address != address {
+		log.Printf("Expected address: %s", address)
+		log.Printf("Got address: %+v", result.address)
+		t.Fail()
+	}
+	if result.auth != expectedAuth {
+		log.Printf("Expected auth: %s", expectedAuth)
+		log.Printf("Got auth: %+v", result.auth)
+		t.Fail()
+	}
+}
