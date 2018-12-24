@@ -102,7 +102,9 @@ func HandlePost(imChan ImageChannel) func(w http.ResponseWriter, r *http.Request
 		log.Println("Received post")
 		datas, err := GetForm(r)
 		if err != nil {
-			log.Println("Could not get multipart form")
+			log.Printf("Could not get multipart form: %v", err)
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			return
 		}
 		for _, headers := range datas.File {
 			file, name, err := AssembleFile(headers)
