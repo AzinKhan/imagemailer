@@ -20,14 +20,12 @@ type ImageProcessor struct {
 	outch  chan Attachment
 }
 
-func NewImageProcessor(ctx context.Context, sender Sender) *ImageProcessor {
+func NewImageProcessor(sender Sender) *ImageProcessor {
 	p := &ImageProcessor{
 		sender: sender,
 		imch:   make(chan []byte),
 		outch:  make(chan Attachment),
 	}
-
-	p.run(ctx)
 
 	return p
 }
@@ -36,35 +34,32 @@ func (p *ImageProcessor) Process(data []byte) {
 	p.imch <- data
 }
 
-// run starts the ImageProcessor, ready to receive uploads
-// via the Process method.
-func (p *ImageProcessor) run(ctx context.Context) {
-
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case attachment, ok := <-p.outch:
-				if !ok {
-					return
-				}
-
-				body := fmt.Sprintf("Email sent: %+v", time.Now())
-				msg := Email{
-					Subject:    fmt.Sprintf("Motion detected! Time: %+v", time.Now()),
-					Body:       []byte(body),
-					Attachment: attachment,
-				}
-				err := p.sender.Send(msg)
-				if err != nil {
-					log.Printf("Error sending email: %v", err)
-				}
-			}
-		}
-	}()
+// Run starts the ImageProcessor, ready to receive uploads
+// via the Process method. It is a blocking method but it can
+// be cancelled via the ctx argument.
+func (p *ImageProcessor) Run(ctx context.Context) {
 
 	go p.buffer(ctx)
+	for {
+		select {
+		case attachment, ok := <-p.outch:
+			if !ok {
+				log.Println("Closing image processor")
+				return
+			}
+
+			body := fmt.Sprintf("Email sent: %+v", time.Now())
+			msg := Email{
+				Subject:    fmt.Sprintf("Motion detected! Time: %+v", time.Now()),
+				Body:       []byte(body),
+				Attachment: attachment,
+			}
+			err := p.sender.Send(msg)
+			if err != nil {
+				log.Printf("Error sending email: %v", err)
+			}
+		}
+	}
 
 }
 
@@ -90,6 +85,7 @@ func (p *ImageProcessor) buffer(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			log.Println("Stopping image buffering")
 			close(p.outch)
 			return
 		case <-t.C:

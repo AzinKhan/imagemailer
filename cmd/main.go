@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 
 	"github.com/AzinKhan/imagemailer/emailer"
 
@@ -35,10 +39,10 @@ func main() {
 	flag.StringVar(&host, "host", "smtp.gmail.com", "Email host")
 	flag.Parse()
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
 
 	mailer := emailer.NewMailer(username, passwd, host, addr, toAddresses...)
-	processor := emailer.NewImageProcessor(ctx, mailer)
+	processor := emailer.NewImageProcessor(mailer)
 
 	router := mux.NewRouter()
 	router.HandleFunc("/", emailer.NewUploadHandler(processor))
@@ -48,8 +52,29 @@ func main() {
 		Handler: router,
 	}
 
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		s := <-ch
+		log.Printf("Signal %s received, exiting...\n", s)
+		server.Shutdown(ctx)
+		cancel()
+	}()
+
 	log.Printf("Email clients are: %+v", toAddresses)
 
 	log.Printf("Starting HTTP server on %s\n", server.Addr)
-	log.Fatal(server.ListenAndServe())
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		processor.Run(ctx)
+	}()
+
+	err := server.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
+		log.Printf("Error running server: %v\n", err)
+	}
+	wg.Wait()
 }
