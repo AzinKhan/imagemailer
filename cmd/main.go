@@ -75,6 +75,7 @@ func main() {
 	err := server.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {
 		log.Printf("Error running server: %v\n", err)
+		cancel()
 	}
 	wg.Wait()
 }
